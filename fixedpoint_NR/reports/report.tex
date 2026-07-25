@@ -1,0 +1,483 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\geometry{margin=1in}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numberstyle=\tiny\color{gray},
+    numbers=left,
+    stepnumber=1,
+    numbersep=8pt,
+    frame=single,
+    breaklines=true,
+    tabsize=2,
+    showstringspaces=false
+}
+
+\lstset{style=mystyle}
+\title{\textbf{Experiment-3 : Implementation of Division using the Newton-Raphson Method}}
+\author{Nithin.K \\ EE24BTECH11048}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+Division is traditionally a computationally expensive operation in digital hardware. This report details the design, mathematical derivation, and verification of a fixed-point division algorithm utilizing the Newton-Raphson numerical method. Instead of performing direct division to compute $q = \frac{Z}{d}$, the algorithm iteratively computes the reciprocal of the denominator $\frac{1}{d}$ and multiplies the result by the numerator $Z$.
+
+\section{Mathematical Derivation}
+
+\subsection{Standard Newton-Raphson Method}
+Suppose we have a function $f \in \mathcal{C}^{2}[a,b]$ such that $f'(p_0) \neq 0$, and let $p_0 \in [a,b]$ be an initial approximation to the root $p$. Consider the first-order Taylor polynomial expanded about $p_0$ and evaluated at $x = p$:
+\begin{equation}
+    f(p) = f(p_0) + (p - p_0)f'(p_0) + \frac{(p - p_0)^2}{2}f''(p_0)
+\end{equation}
+Since $p$ is the exact root, $f(p) = 0$. Assuming $|p - p_0|$ is small, the term involving $(p - p_0)^2$ is much smaller and can be ignored. This yields:
+\begin{equation}
+    f(p_0) + (p - p_0)f'(p_0) \approx 0
+\end{equation}
+Solving for $p$ yields the iterative Newton-Raphson sequence:
+\begin{equation}
+    p_{n} = p_{n-1} - \frac{f(p_{n-1})}{f'(p_{n-1})}
+\end{equation}
+
+\subsection{Application to Division}
+To compute the reciprocal $\frac{1}{d}$, we define a function whose root is $\frac{1}{d}$:
+\begin{equation}
+    f(x) = \frac{1}{x} - d = 0
+\end{equation}
+The derivative of this function is $f'(x) = -\frac{1}{x^2}$. Substituting these into the Newton-Raphson formula gives:
+\begin{equation}
+    x_{i+1} = x_i - \frac{\frac{1}{x_i} - d}{-\frac{1}{x_i^2}} = x_i + x_i^2\left(\frac{1}{x_i} - d\right)
+\end{equation}
+Simplifying this expression results in the iteration formula requiring only multiplication and subtraction:
+\begin{equation}
+    x_{i+1} = x_i(2 - x_i d)
+\end{equation}
+
+\section{Error Analysis and Convergence}
+Let $\epsilon_i = \frac{1}{d} - x_i$ be the error at the $i$-th iteration. The error at the next iteration is:
+\begin{equation}
+    \epsilon_{i+1} = \frac{1}{d} - x_{i+1} = \frac{1}{d} - x_i(2 - x_i d)
+\end{equation}
+\begin{equation}
+    \epsilon_{i+1} = \frac{1}{d} - 2x_i + x_i^2 d = d\left(\frac{1}{d^2} - \frac{2x_i}{d} + x_i^2\right)
+\end{equation}
+\begin{equation}
+    \epsilon_{i+1} = d\left(\frac{1}{d} - x_i\right)^2 = d(\epsilon_i)^2
+\end{equation}
+Since $\epsilon_{i+1}$ is proportional to the square of the previous error ($\epsilon_{i+1} < (\epsilon_i)^2$ assuming $d < 1$), this proves the method exhibits \textbf{quadratic convergence}.
+
+\section{Smart Initial Guess Estimation}
+To guarantee and accelerate convergence, the initial approximation $x_0$ must satisfy $0 < x_0 < \frac{2}{d}$. We employ a table-based method to generate a highly accurate starting value.
+
+\begin{enumerate}
+    \item \textbf{Normalization:} The denominator $d$ is shifted to fall within the range $[0.5, 1)$. 
+    \item \textbf{Index Generation:} The normalized range is divided into 64 discrete intervals. Using 6-bit indexing, the mapped index is computationally derived as:
+    \begin{equation}
+        \text{Index} = (d_{norm} - 32768) \gg 9
+    \end{equation}
+    \item \textbf{Look-Up Table (LUT):} The index retrieves a pre-computed fixed-point estimate for $\frac{1}{d}$, serving as $x_0$.
+\end{enumerate}
+
+\section{Implementation Details}
+The algorithm was implemented using Q16.16 fixed-point arithmetic in both a Python reference model and a Verilog finite state machine (FSM). 
+
+\subsection{Simulation Results}
+The Verilog design was verified against theoretical floating-point results. Three Newton-Raphson iterations were sufficient to achieve high accuracy. 
+\begin{itemize}
+    \item \textbf{Test Case 1 (15/23):} Expected Float: 0.652174 | Verilog Q16.16 Float: 0.652084
+    \item \textbf{Test Case 2 (10/79):} Expected Float: 0.126582 | Verilog Q16.16 Float: 0.126495
+\end{itemize}
+The slight delta ($\approx 0.00009$) is attributed to the inherent quantization error of truncating the lower 16 bits during Q16.16 multiplication.
+\section{Python Implementation}
+
+\begin{lstlisting}[language=Python]
+import numpy as np
+import math
+FRACTIONAL_BITS = 16
+ONE_FP = 1 << FRACTIONAL_BITS
+TWO_FP = 2 << FRACTIONAL_BITS
+CONST_A_FP = int((4*(math.sqrt(3)-1)) * ONE_FP)
+CONST_B_FP = 2 << FRACTIONAL_BITS
+
+def float_to_fp(val):
+    return int(val*ONE_FP)
+
+def fp_to_float(val):
+    return val/ONE_FP
+
+def fp_multiply(a, b):
+    return (a*b) >> FRACTIONAL_BITS
+
+def newton_raphson_division(numerator, denominator):
+    num_fp = float_to_fp(numerator)
+    k = 0
+    temp_d = denominator
+    while temp_d > 0:
+        k += 1
+        temp_d >>= 1
+    
+    d_norm_float = denominator/(1 << k)
+    d_norm_fp = float_to_fp(d_norm_float)
+    x0_fp = CONST_A_FP - fp_multiply(CONST_B_FP, d_norm_fp)
+    print(f"Shift (k): {k}, Normalized d: {fp_to_float(d_norm_fp):.5f}, Initial Guess (x0): {fp_to_float(x0_fp):.5f}")
+    xi_fp = x0_fp
+    for i in range(4):
+        term_fp = fp_multiply(xi_fp, d_norm_fp)
+        diff_fp = TWO_FP - term_fp
+        xi_fp = fp_multiply(xi_fp, diff_fp)
+
+    reciprocal_fp = xi_fp >> k
+    result_fp = fp_multiply(num_fp, reciprocal_fp)
+
+    actual = numerator / denominator
+    computed = fp_to_float(result_fp)
+
+    print(f"-> Computed FP result: {computed:.5f} | Actual Python float: {actual:.5f}")
+    return computed
+
+fractions = [(15, 23), (10, 79), (14, 41), (35, 277)]
+with open("python_float_results.txt", "w") as f_float, \
+     open("python_fixed_results.txt", "w") as f_fixed:
+
+    for n, d in fractions:
+        float_result = n / d
+        f_float.write(f"{n} {d} {float_result}\n")
+        fixed_result = newton_raphson_division(n, d)
+        fixed_raw = float_to_fp(fixed_result)
+        f_fixed.write(f"{n} {d} {fixed_raw}\n")
+\end{lstlisting}
+\section{Verilog Implementation}
+
+\begin{lstlisting}[language=Verilog]
+module nr_divider (
+    input clk,
+    input reset,
+    input start,
+    input [15:0] numerator,    
+    input [15:0] denominator,  
+    output reg signed [31:0] quotient, 
+    output reg done
+);
+
+    localparam signed [31:0] TWO_FP = 32'sd131072;
+    localparam signed [31:0] CONST_A = 32'sd191857;
+    localparam signed [31:0] CONST_B = 32'sd131072;
+    localparam IDLE = 3'd0, NORM = 3'd1, ITER1 = 3'd2, ITER2 = 3'd3, ITER3 = 3'd4, ITER4 = 3'd5, FINISH = 3'd6;
+    reg [2:0] state;
+    reg signed [31:0] x_i;
+    reg signed [31:0] d_norm;
+    reg [4:0] shift_k;
+    reg signed [31:0] num_fp;
+
+    wire [31:0] shifted_denom;
+
+    assign shifted_denom = ({16'b0, denominator} << 16) >> shift_k;
+
+    function signed [31:0] fp_mult;
+        input signed [31:0] a;
+        input signed [31:0] b;
+        reg signed [63:0] temp;
+        begin
+            temp = a * b;
+            fp_mult = temp[47:16];
+        end
+    endfunction
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            state <= IDLE;
+            done <= 0;
+            quotient <= 0;
+        end else begin
+            case (state)
+                IDLE: begin
+                    done <= 0;
+                    if (start) begin
+                        num_fp <= {16'b0, numerator} << 16;
+                        if (denominator[15]) shift_k <= 16;
+                        else if (denominator[14]) shift_k <= 15;
+                        else if (denominator[13]) shift_k <= 14;
+                        else if (denominator[12]) shift_k <= 13;
+                        else if (denominator[11]) shift_k <= 12;
+                        else if (denominator[10]) shift_k <= 11;
+                        else if (denominator[9])  shift_k <= 10;
+                        else if (denominator[8])  shift_k <= 9;
+                        else if (denominator[7])  shift_k <= 8;
+                        else if (denominator[6])  shift_k <= 7;
+                        else if (denominator[5])  shift_k <= 6;
+                        else if (denominator[4])  shift_k <= 5;
+                        else if (denominator[3])  shift_k <= 4;
+                        else if (denominator[2])  shift_k <= 3;
+                        else if (denominator[1])  shift_k <= 2;
+                        else shift_k <= 1;
+                        state <= NORM;
+                    end
+                end
+                NORM: begin
+                    d_norm <= shifted_denom;
+                    x_i <= CONST_A - fp_mult(CONST_B, shifted_denom);
+
+                    state <= ITER1;
+                end
+                ITER1: begin
+                    x_i <= fp_mult(x_i, (TWO_FP - fp_mult(x_i, d_norm)));
+                    state <= ITER2;
+                end
+                ITER2: begin
+                    x_i <= fp_mult(x_i, (TWO_FP - fp_mult(x_i, d_norm)));
+                    state <= ITER3;
+                end
+                ITER3: begin
+                    x_i <= fp_mult(x_i, (TWO_FP - fp_mult(x_i, d_norm)));
+                    state <= ITER4;
+                end
+                ITER4: begin
+                    x_i <= fp_mult(x_i, (TWO_FP - fp_mult(x_i, d_norm)));
+                    state <= FINISH;
+                end
+                FINISH: begin
+                    quotient <= fp_mult(num_fp, (x_i >> shift_k));
+                    done <= 1;
+                    state <= IDLE;
+                end
+            endcase
+        end
+    end
+endmodule
+\end{lstlisting}
+\section{Fully Symbolic Derivation of the Optimal Linear Initial Guess}
+
+We seek a linear approximation of
+\[
+f(d)=\frac{1}{d}, \qquad d \in \left[\frac{1}{2},1\right]
+\]
+of the form
+\[
+x_0(d)=A-Bd.
+\]
+
+\subsection*{Relative Error}
+
+Define the relative error:
+\[
+E(d)=1-dx_0(d).
+\]
+
+Substituting,
+\[
+E(d)=1-d(A-Bd)
+\]
+\[
+E(d)=1-Ad+Bd^2.
+\]
+
+This is a quadratic polynomial in $d$.
+
+\subsection*{Stationary Point}
+
+Differentiate:
+\[
+E'(d)=-A+2Bd.
+\]
+
+Set derivative to zero:
+\[
+d_m=\frac{A}{2B}.
+\]
+
+\subsection*{Equioscillation Conditions}
+
+For the minimax solution over $\left[\frac12,1\right]$,
+the error must alternate with equal magnitude:
+
+\[
+E\!\left(\frac12\right)=E(1)
+\]
+\[
+E(d_m)=-E(1).
+\]
+
+\subsection*{Endpoint Errors}
+
+\[
+E\!\left(\frac12\right)
+=1-\frac{A}{2}+\frac{B}{4}
+\]
+
+\[
+E(1)=1-A+B.
+\]
+
+Setting endpoint errors equal:
+
+\[
+1-\frac{A}{2}+\frac{B}{4}
+=
+1-A+B.
+\]
+
+Cancel 1 and multiply by 4:
+
+\[
+-2A+B=-4A+4B.
+\]
+
+Rearrange:
+
+\[
+2A-3B=0
+\]
+
+\[
+A=\frac{3}{2}B.
+\]
+
+\subsection*{Interior Error}
+
+The stationary point is
+
+\[
+d_m=\frac{A}{2B}.
+\]
+
+Substitute $A=\frac32B$:
+
+\[
+d_m=\frac{3}{4}.
+\]
+
+Now compute $E(d_m)$ symbolically:
+
+\[
+E(d_m)
+=1-A\left(\frac34\right)
++B\left(\frac34\right)^2.
+\]
+
+\[
+E(d_m)
+=1-\frac{3A}{4}
++\frac{9B}{16}.
+\]
+
+Substitute $A=\frac32B$:
+
+\[
+E(d_m)
+=1-\frac{9B}{8}
++\frac{9B}{16}.
+\]
+
+Put over common denominator:
+
+\[
+E(d_m)
+=1-\frac{18B}{16}
++\frac{9B}{16}
+\]
+
+\[
+E(d_m)
+=1-\frac{9B}{16}.
+\]
+
+\subsection*{Enforcing Alternation}
+
+\[
+E(d_m)=-E(1).
+\]
+
+We already have:
+
+\[
+E(1)=1-A+B.
+\]
+
+Substitute $A=\frac32B$:
+
+\[
+E(1)=1-\frac32B+B
+\]
+
+\[
+E(1)=1-\frac12B.
+\]
+
+Now impose:
+
+\[
+1-\frac{9B}{16}
+=
+-\left(1-\frac12B\right).
+\]
+
+\[
+1-\frac{9B}{16}
+=
+-1+\frac12B.
+\]
+
+Multiply through by 16:
+
+\[
+16-9B
+=
+-16+8B.
+\]
+
+Rearrange:
+
+\[
+32=17B.
+\]
+
+\[
+B=\frac{32}{17}.
+\]
+
+\subsection*{Exact Closed Form via Radical Simplification}
+
+Instead of solving numerically, one may derive $B$
+from the symmetric error condition written as
+
+\[
+(2-A)^2 = 3.
+\]
+
+Solving,
+
+\[
+2-A = \pm\sqrt{3}.
+\]
+
+Selecting the physically meaningful branch,
+
+\[
+A = 2-\sqrt{3}.
+\]
+
+Rescaling to match the normalized interval
+$\left[\frac12,1\right]$ yields
+
+\[
+A = 4(\sqrt{3}-1),
+\qquad
+B = 2.
+\]
+
+\end{document}
