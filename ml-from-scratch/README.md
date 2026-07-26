@@ -1,5 +1,4 @@
 # ML Algorithms from Scratch
-
 Three machine learning paradigms — classical linear classification, deep
 learning, and reinforcement learning — implemented from first principles in
 NumPy, with no reliance on scikit-learn/PyTorch/TensorFlow for the actual
@@ -11,7 +10,6 @@ demo script and generated result plots — meant to be readable end-to-end,
 not just runnable.
 
 ## Why this project
-
 Most ML portfolios lean on `sklearn.fit()`. This one doesn't: every model
 here — from a hand-derived backpropagation neural network to tabular
 Q-learning — is built from the underlying math up, which demonstrates
@@ -81,14 +79,3 @@ transitions, with exploration rate controlling the speed/noise tradeoff:
 - Each module is independently importable (e.g. `from classifiers import
   LogisticRegressionIRLS`) so pieces can be reused outside of the demo
   scripts.
-
-## Possible extensions
-
-- Add a CNN variant to the neural network module for image data.
-- Vectorize Q-learning's episode loop for larger state/action spaces.
-- Add unit tests (`pytest`) per module — currently validated via the demo
-  scripts' printed metrics rather than a formal test suite.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
