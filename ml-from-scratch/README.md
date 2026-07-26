@@ -29,7 +29,6 @@ a library.
 ```bash
 git clone <this-repo>
 cd ml-from-scratch
-pip install -r requirements.txt
 
 python neural_network/demo.py
 python classification/demo.py
